@@ -58,6 +58,11 @@ export function SignerFlow({
   const [signatureDataUrl, setSignatureDataUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [sealHash, setSealHash] = useState<string | null>(contract.sealHash);
+  const [completion, setCompletion] = useState<{
+    pdfReady: boolean;
+    tsaApplied: boolean;
+    tsaStub: boolean;
+  } | null>(null);
   const [pending, startTransition] = useTransition();
 
   if (contract.status === "voided" || contract.status === "expired") {
@@ -131,6 +136,13 @@ export function SignerFlow({
           consentAcknowledged: true,
         });
         if ("sealHash" in r && r.sealHash) setSealHash(r.sealHash);
+        if ("pdfReady" in r) {
+          setCompletion({
+            pdfReady: !!r.pdfReady,
+            tsaApplied: !!r.tsaApplied,
+            tsaStub: !!r.tsaStub,
+          });
+        }
         setStep("done");
       } catch (e) {
         setError(e instanceof Error ? e.message : "簽署失敗");
@@ -301,7 +313,7 @@ export function SignerFlow({
                 我們已紀錄完整稽核軌跡，並將寄送一份副本至您的信箱。
               </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-2 text-sm">
+            <CardContent className="space-y-4 text-sm">
               <div className="grid gap-2">
                 <Row label="簽署人" value={contract.signerName} />
                 <Row label="文件指紋" mono value={contract.contentHash} />
@@ -313,6 +325,47 @@ export function SignerFlow({
                   />
                 )}
               </div>
+
+              <div className="flex flex-wrap gap-2 pt-2">
+                {(completion?.pdfReady ?? true) && (
+                  <a
+                    href={`/api/sign/${token}/pdf`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    <Button type="button" variant="default" size="sm">
+                      下載簽署完成 PDF
+                    </Button>
+                  </a>
+                )}
+                {completion?.tsaApplied && (
+                  <a
+                    href={`/api/sign/${token}/timestamp`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    <Button type="button" variant="outline" size="sm">
+                      下載 TSA 時戳 (.tsr)
+                    </Button>
+                  </a>
+                )}
+                <a
+                  href={`/api/sign/${token}/verify`}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  <Button type="button" variant="ghost" size="sm">
+                    完整性驗證 (JSON)
+                  </Button>
+                </a>
+              </div>
+
+              {completion?.tsaStub && (
+                <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                  本次簽署使用開發模式 stub 時戳，僅作示意，不具法律效力。
+                  正式環境請設定 TWCA_TSA_URL 等變數啟用真實 RFC 3161 時戳。
+                </div>
+              )}
             </CardContent>
           </Card>
         )}

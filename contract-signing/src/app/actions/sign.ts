@@ -1,6 +1,6 @@
 "use server";
 
-import { db, contracts } from "@/lib/db";
+import { db, contracts, contractTemplates } from "@/lib/db";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { issueOtp, verifyOtp } from "@/lib/otp";
@@ -10,6 +10,8 @@ import { sha256 } from "@/lib/crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { revalidatePath } from "next/cache";
+import { generateContractPdf } from "@/lib/pdf/generate";
+import { getTsaProvider, type TimestampResult } from "@/lib/tsa/client";
 
 const STORAGE_PATH = process.env.STORAGE_LOCAL_PATH ?? "./storage";
 
@@ -159,13 +161,85 @@ export async function submitSignature(
     data: { signatureHash: sigHash },
   });
 
+  const template = await db
+    .select()
+    .from(contractTemplates)
+    .where(eq(contractTemplates.id, contract.templateId))
+    .limit(1);
+
+  const pdfDir = path.join(STORAGE_PATH, "pdfs");
+  await fs.mkdir(pdfDir, { recursive: true });
+  const pdfPath = path.join(pdfDir, `${contract.id}.pdf`);
+
+  let pdfHash: string | null = null;
+  let pdfError: string | null = null;
+  try {
+    const pdfBytes = await generateContractPdf({
+      title: contract.title,
+      bodyMarkdown: template[0]?.bodyMarkdown ?? "",
+      signerName: contract.signerName,
+      signerEmail: contract.signerEmail,
+      signedAt,
+      contentHash: contract.contentHash ?? "",
+      sealHash,
+      signatureImagePng: sigBuffer,
+      verificationLevel: contract.verificationLevel,
+      templateName: template[0]?.name ?? "合約",
+    });
+    await fs.writeFile(pdfPath, pdfBytes);
+    pdfHash = sha256(Buffer.from(pdfBytes));
+
+    await appendAudit(contract.id, "pdf.sealed", {
+      actor: "system",
+      data: { pdfHash, bytes: pdfBytes.length },
+    });
+  } catch (e) {
+    pdfError = e instanceof Error ? e.message : String(e);
+    console.error("PDF generation failed:", pdfError);
+  }
+
+  let tsaResult: TimestampResult | null = null;
+
+  if (contract.requireTsa && pdfHash) {
+    try {
+      await appendAudit(contract.id, "tsa.requested", {
+        actor: "system",
+        data: { provider: process.env.TWCA_TSA_URL ? "TWCA" : "dev-stub" },
+      });
+
+      const provider = getTsaProvider();
+      const pdfBuf = await fs.readFile(pdfPath);
+      tsaResult = await provider.applyTimestamp(pdfBuf);
+
+      await appendAudit(contract.id, "tsa.applied", {
+        actor: "system",
+        data: {
+          provider: tsaResult.provider,
+          status: tsaResult.status,
+          genTime: tsaResult.genTime?.toISOString() ?? null,
+          serialNumber: tsaResult.serialNumber,
+        },
+      });
+    } catch (e) {
+      console.error("TSA timestamping failed:", e);
+      await appendAudit(contract.id, "tsa.applied", {
+        actor: "system",
+        data: { error: e instanceof Error ? e.message : String(e) },
+      });
+    }
+  }
+
   await db
     .update(contracts)
     .set({
       status: "signed",
       signedAt,
       signatureImagePath: sigPath,
-      signedPdfHash: sealHash,
+      signedPdfPath: pdfHash ? pdfPath : null,
+      signedPdfHash: pdfHash ?? sealHash,
+      tsaTokenBase64: tsaResult?.tokenBase64 ?? null,
+      tsaTimestampAt: tsaResult?.genTime ?? null,
+      tsaProvider: tsaResult?.provider ?? null,
       updatedAt: new Date(),
     })
     .where(eq(contracts.id, contract.id));
@@ -174,19 +248,19 @@ export async function submitSignature(
     actor: "signer",
     ip: ctx.ip,
     userAgent: ctx.userAgent,
-    data: { sealHash, contentHash: contract.contentHash },
+    data: { sealHash, contentHash: contract.contentHash, pdfHash, pdfError },
   });
-
-  if (contract.requireTsa) {
-    await appendAudit(contract.id, "tsa.requested", {
-      actor: "system",
-      data: { note: "TWCA TSA integration pending in Phase 2" },
-    });
-  }
 
   revalidatePath(`/sign/${token}`);
 
-  return { ok: true as const, sealHash };
+  return {
+    ok: true as const,
+    sealHash,
+    pdfHash,
+    pdfReady: !!pdfHash,
+    tsaApplied: tsaResult?.status === "granted" || tsaResult?.status === "grantedWithMods",
+    tsaStub: tsaResult?.status === "stub",
+  };
 }
 
 export async function recordView(token: string) {
