@@ -1,0 +1,21 @@
+{
+  "name": "line-customer-service",
+  "version": "1.0.0",
+  "description": "視界學院 LINE 官方帳號客服 Bot：FAQ 自動回覆、AI 回覆、紅線守門、真人轉接、對話彙整",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "report": "node scripts/weekly-report.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.32.1",
+    "@line/bot-sdk": "^9.5.0",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2"
+  }
+}
