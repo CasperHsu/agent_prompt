@@ -89,6 +89,37 @@ npm start              # 或 npm run dev（檔案變動自動重啟）
 
 ---
 
+## 測試
+
+用 Node 內建測試框架（免額外依賴）：
+
+```bash
+npm test
+```
+
+涵蓋分類/紅線偵測（`test/classifier.test.js`）與決策流程（`test/responder.test.js`）：FAQ 命中、投資紅線閃避、E 類危機升級、兜底紅線婉拒、未命中轉真人等。
+
+---
+
+## 部署
+
+### Docker
+
+```bash
+docker build -t line-cs .
+docker run -p 3000:3000 --env-file .env line-cs
+```
+
+健康檢查端點 `/healthz`，容器內建 HEALTHCHECK。
+
+### Render（一鍵）
+
+repo 內含 `render.yaml`。在 [Render](https://render.com) 連到此 repo（rootDir 已設為 `line-customer-service`），機密值（LINE 金鑰、`ANTHROPIC_API_KEY` 等）在 Dashboard 設定，不要寫進檔案。部署後把 `https://<your-app>.onrender.com/webhook` 填回 LINE Webhook URL。
+
+> 其他平台（Railway、Fly.io、自架）同理：設好環境變數、對外暴露 `PORT`、webhook 指向 `/webhook` 即可。
+
+---
+
 ## 彙整與週報
 
 - 每通對話寫入 `logs/conversations.jsonl`（已被 `.gitignore` 忽略，**不進版控、不上雲端**）。
