@@ -1,0 +1,35 @@
+# Render 部署設定 — https://render.com
+# 在 Render 連到此 repo，rootDir 指向 line-customer-service 即可。
+services:
+  - type: web
+    name: line-customer-service
+    runtime: node
+    region: singapore
+    plan: free
+    rootDir: line-customer-service
+    buildCommand: npm ci
+    startCommand: node server.js
+    healthCheckPath: /healthz
+    autoDeploy: true
+    envVars:
+      # 機密值在 Render Dashboard 設定，不要寫進此檔
+      - key: LINE_CHANNEL_ACCESS_TOKEN
+        sync: false
+      - key: LINE_CHANNEL_SECRET
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: ESCALATION_NOTIFY_TO
+        sync: false
+      - key: CLAUDE_MODEL
+        value: claude-haiku-4-5-20251001
+      - key: SERVICE_HOURS_START
+        value: "10"
+      - key: SERVICE_HOURS_END
+        value: "18"
+      - key: SERVICE_DAYS
+        value: "1,2,3,4,5"
+      - key: COURSE_PAGE_URL
+        sync: false
+      - key: SIGNUP_URL
+        sync: false
